@@ -1,69 +1,140 @@
 import './css/styles.css';
-import debounce from 'lodash.debounce';
-import Notiflix from 'notiflix';
-import fetchCountries from './fetchCountries';
+import { Notify } from 'notiflix/build/notiflix-notify-aio';
+import SimpleLightbox from 'simplelightbox';
+import 'simplelightbox/dist/simple-lightbox.min.css';
+import fetchImages from './fetchImages';
 
-const searchBox = document.querySelector('#search-box');
-const countryList = document.querySelector('.country-list');
-const countryInfo = document.querySelector('.country-info');
-const DEBOUNCE_DELAY = 300;
-searchBox.addEventListener('input', debounce(searchCountry, DEBOUNCE_DELAY));
-countryInfo.style.display = 'none';
+const refs = {
+  form: document.querySelector('#search-form'),
+  divGallery: document.querySelector('.gallery'),
+  guard: document.querySelector('.js-guard'),
+};
 
-function searchCountry(e) {
-  const mainCountry = e.target.value.trim();
-  countryInfo.style.display = 'none';
-  countryList.innerHTML = '';
-  countryInfo.innerHTML = '';
-  if (mainCountry !== '') {
-    fetchCountries(mainCountry)
-      .then(data => {
-        if (data.length >= 2 && data.length <= 10) {
-          // countryInfo.style.display = 'none';
-          createCountryList(data);
-        } else if (data.length === 1) {
-          countryInfo.style.display = 'flex';
-          createCountryCard(data);
-        } else if (data.length > 10) {
-          Notiflix.Notify.info(
-            'Too many matches found. Please enter a more specific name.'
-          );
-        }
-      })
-      .catch(
-        err => (
-          console.error(err.toString()),
-          Notiflix.Notify.failure('Oops, there is no country with that name')
-        )
-      );
+const simpleligthbox = new SimpleLightbox('.gallery a', { loop: false });
+
+let page = 1;
+let totalPages = 0;
+let searchQuery = '';
+const imagesPerPage = 40;
+
+const options = {
+  root: null,
+  rootMargin: '200px',
+  threshold: 1.0,
+};
+
+const observer = new IntersectionObserver(onLoad, options);
+
+refs.form.addEventListener('submit', onFormSubmit);
+
+function onFormSubmit(evt) {
+  evt.preventDefault();
+
+  searchQuery = evt.currentTarget.elements.searchQuery.value.trim();
+
+  resetPage();
+
+  if (!searchQuery) {
+    clearGalleryList();
+    Notify.failure(
+      'Sorry, there are no images matching your search query. Please try again.'
+    );
+    return;
   }
-}
-function createCountryList(arr) {
-  const list = arr
-    .map(({ flags, name }) => {
-      return `<li class="country__item">
-  <img src="${flags.svg}" alt="${name.official}" width="30" height="30" />
-  <h2 class="country__name">${name.common}</h2>
-</li>`;
+
+  fetchImages(searchQuery, page)
+    .then(({ data }) => {
+      if (!data.totalHits) {
+        Notify.failure(
+          'Sorry, there are no images matching your search query. Please try again.'
+        );
+        clearGalleryList();
+        return;
+      }
+
+      clearGalleryList();
+      Notify.success(`Hooray! We found ${data.totalHits} images.`);
+      refs.divGallery.insertAdjacentHTML('beforeend', createMarkup(data.hits));
+      observer.observe(refs.guard);
+      totalPages = Math.ceil(data.totalHits / imagesPerPage);
+      if (page === totalPages) {
+        console.log(page);
+        Notify.info(
+          `We're sorry, but you've reached the end of search results.`
+        );
+        observer.unobserve(refs.guard);
+
+        return;
+      }
     })
-    .join('');
-  countryList.insertAdjacentHTML('beforeend', list);
+    .then(() => simpleligthbox.refresh());
 }
-function createCountryCard(arr) {
-  const card = arr
-    .map(({ flags, name, capital, population, languages }) => {
-      return `<div class="country__title">
-  <img src="${flags.svg}" alt="${name.official}" width="55" height="45" />
-  <h1 class="country__name">${name.official}</h1>
-</div>
-<ul>
-  <li class="country__capital item">Capital: ${capital}</li>
-  <li class="country__population item">Population: ${population}</li>
-  <li class="country__languages item">languages: ${Object.values(
-    languages
-  )}</li>
-</ul>`;
-    })
+
+function createMarkup(arr) {
+  return arr
+    .map(
+      ({
+        webformatURL,
+        largeImageURL,
+        tags,
+        likes,
+        views,
+        comments,
+        downloads,
+      }) => `
+      <div class="photo-card">
+      <div class="thumb"><a class="gallery-item" href="${largeImageURL}">
+        <img src="${webformatURL}" alt="${tags}" loading="lazy" /></a></div>
+  <div class="info">
+    <p class="info-item">
+      <b>Likes</b>${likes}
+    </p>
+    <p class="info-item">
+      <b>Views</b>${views}
+    </p>
+    <p class="info-item">
+      <b>Comments</b>${comments}
+    </p>
+    <p class="info-item">
+      <b>Downloads </b>${downloads}
+    </p>
+  </div>
+</div>`
+    )
     .join('');
-  countryInfo.insertAdjacentHTML('beforeend', card);
+}
+
+function onLoad(entries, observer) {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      page += 1;
+
+      fetchImages(searchQuery, page)
+        .then(({ data }) => {
+          refs.divGallery.insertAdjacentHTML(
+            'beforeend',
+            createMarkup(data.hits)
+          );
+          totalPages = Math.ceil(data.totalHits / imagesPerPage);
+          if (page === totalPages) {
+            console.log(page);
+            Notify.info(
+              `We're sorry, but you've reached the end of search results.`
+            );
+            observer.unobserve(refs.guard);
+
+            return;
+          }
+        })
+        .then(() => simpleligthbox.refresh());
+    }
+  });
+}
+
+function clearGalleryList() {
+  refs.divGallery.innerHTML = '';
+}
+
+function resetPage() {
+  page = 1;
 }
