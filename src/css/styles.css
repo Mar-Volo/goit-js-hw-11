@@ -53,6 +53,7 @@ img {
   border: none;
   color: rgb(35, 156, 236);
   transition: all 400ms ease;
+  cursor: pointer;
 }
 .search-form__btn:hover,
 .search-form__btn:focus {
