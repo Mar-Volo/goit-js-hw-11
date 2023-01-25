@@ -27,7 +27,7 @@ const observer = new IntersectionObserver(onLoad, options);
 
 refs.form.addEventListener('submit', onFormSubmit);
 
-function onFormSubmit(evt) {
+async function onFormSubmit(evt) {
   evt.preventDefault();
 
   searchQuery = evt.currentTarget.elements.searchQuery.value.trim();
@@ -35,103 +35,114 @@ function onFormSubmit(evt) {
   resetPage();
 
   if (!searchQuery) {
-    clearGalleryList();
+    // clearDivGallery();
     Notify.failure(
       'Sorry, there are no images matching your search query. Please try again.'
     );
     return;
   }
+  
+  // clearDivGallery();
+  try {
+    const data = await fetchImages(searchQuery, page);
+    console.log(data);
+    if (!data.totalHits) {
+      // clearDivGallery();
+      Notify.failure(
+        'Sorry, there are no images matching your search query. Please try again.'
+      );
+      return;
+    }
+    clearDivGallery();
+    Notify.success(`Hooray! We found ${data.totalHits} images.`);
+    createMarkup(data.hits);
+    observer.observe(refs.guard);
+    totalPages = Math.ceil(data.totalHits / imagesPerPage);
+    if (page === totalPages) {
+      console.log(page);
+      Notify.info(`We're sorry, but you've reached the end of search results.`);
+      observer.unobserve(refs.guard);
 
-  fetchImages(searchQuery, page)
-    .then(({ data }) => {
-      if (!data.totalHits) {
-        Notify.failure(
-          'Sorry, there are no images matching your search query. Please try again.'
-        );
-        clearGalleryList();
-        return;
-      }
-
-      clearGalleryList();
-      Notify.success(`Hooray! We found ${data.totalHits} images.`);
-      refs.divGallery.insertAdjacentHTML('beforeend', createMarkup(data.hits));
-      observer.observe(refs.guard);
-      totalPages = Math.ceil(data.totalHits / imagesPerPage);
-      if (page === totalPages) {
-        console.log(page);
-        Notify.info(
-          `We're sorry, but you've reached the end of search results.`
-        );
-        observer.unobserve(refs.guard);
-
-        return;
-      }
-    })
-    .then(() => simpleligthbox.refresh());
+      return;
+    }
+    simpleligthbox.refresh();
+  } catch (error) {
+    Notify.failure(`${error}`);
+    console.log(error);
+  }
 }
-
 function createMarkup(arr) {
-  return arr
-    .map(
-      ({
-        webformatURL,
-        largeImageURL,
-        tags,
-        likes,
-        views,
-        comments,
-        downloads,
-      }) => `
-      <div class="photo-card">
-      <div class="thumb"><a class="gallery-item" href="${largeImageURL}">
-        <img src="${webformatURL}" alt="${tags}" loading="lazy" /></a></div>
-  <div class="info">
-    <p class="info-item">
-      <b>Likes</b>${likes}
-    </p>
-    <p class="info-item">
-      <b>Views</b>${views}
-    </p>
-    <p class="info-item">
-      <b>Comments</b>${comments}
-    </p>
-    <p class="info-item">
-      <b>Downloads </b>${downloads}
-    </p>
-  </div>
-</div>`
-    )
+  let markup = arr
+    .map(item => {
+      return `<div class="photo-card">
+       <div class="thumb"><a class="gallery-item" href="${item.largeImageURL}">
+         <img src="${item.webformatURL}" alt="${item.tags}" loading="lazy" /></a></div>
+   <div class="info">
+     <p class="info-item">
+       <b>Likes</b>${item.likes}
+     </p>
+     <p class="info-item">
+       <b>Views</b>${item.views}
+     </p>
+     <p class="info-item">
+       <b>Comments</b>${item.comments}
+     </p>
+     <p class="info-item">
+       <b>Downloads </b>${item.downloads}
+     </p>
+   </div>
+ </div>`;
+    })
     .join('');
+  refs.divGallery.insertAdjacentHTML('beforeend', markup);
 }
 
-function onLoad(entries, observer) {
-  entries.forEach(entry => {
+async function onLoad(entries, observer) {
+  console.log(entries);
+  entries.forEach(async entry => {
+    console.log(entries)
     if (entry.isIntersecting) {
       page += 1;
 
-      fetchImages(searchQuery, page)
-        .then(({ data }) => {
-          refs.divGallery.insertAdjacentHTML(
-            'beforeend',
-            createMarkup(data.hits)
-          );
-          totalPages = Math.ceil(data.totalHits / imagesPerPage);
-          if (page === totalPages) {
-            console.log(page);
-            Notify.info(
-              `We're sorry, but you've reached the end of search results.`
-            );
-            observer.unobserve(refs.guard);
+      try {
+        const data = await fetchImages(searchQuery, page);
+        createMarkup(data.hits);
+        totalPages = Math.ceil(data.totalHits / imagesPerPage);
+        if (page > 1) {
+          smoothScroll()
+        }
+        if (page === totalPages) {
 
-            return;
-          }
-        })
-        .then(() => simpleligthbox.refresh());
+          console.log(page);
+          Notify.info(
+            `We're sorry, but you've reached the end of search results.`
+          );
+          observer.unobserve(refs.guard);
+
+          return;
+
+        }
+        simpleligthbox.refresh();
+      } catch (error) {
+        Notify.failure(`${error}`);
+        console.log(error);
+      }
     }
   });
 }
 
-function clearGalleryList() {
+function smoothScroll() {
+  const { height: cardHeight } = document
+    .querySelector('.gallery')
+    .firstElementChild.getBoundingClientRect();
+
+  window.scrollBy({
+    top: cardHeight * 2,
+    behavior: 'smooth',
+  });
+}
+
+function clearDivGallery() {
   refs.divGallery.innerHTML = '';
 }
 
